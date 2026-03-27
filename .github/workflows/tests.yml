@@ -1,0 +1,111 @@
+name: Run Tests
+
+on:
+  pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Enables manual triggering
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    env:
+      GRAPHDB_URL: http://localhost:7200
+      GRAPHDB_USERNAME: admin
+      GRAPHDB_PASSWORD: root
+      GRAPHDB_TEST_REPOSITORY: test-repo
+    
+    services:
+      graphdb:
+        image: khaller/graphdb-free
+        ports:
+          - 7200:7200
+        options: >-
+          --health-cmd "curl -f http://localhost:7200/rest/repositories || exit 1"
+          --health-interval 30s
+          --health-timeout 10s
+          --health-retries 5
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Start GraphDB and wait for it to be ready
+      run: |
+        echo "Waiting for GraphDB to be ready..."
+        until curl -s http://localhost:7200/rest/repositories; do
+          sleep 5
+        done
+        echo "GraphDB is ready!"
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.11"
+
+    - name: Install Poetry
+      uses: snok/install-poetry@v1
+      with:
+        virtualenvs-create: true
+        virtualenvs-in-project: true
+
+    - name: Update poetry lock file
+      run: poetry lock
+
+    - name: Install dependencies
+      run: poetry install --with dev
+
+    - name: Create test repository
+      run: |
+        cat > repo-config.ttl << EOF
+        @prefix rep: <http://www.openrdf.org/config/repository#> .
+        @prefix sr: <http://www.openrdf.org/config/repository/sail#> .
+        @prefix sail: <http://www.openrdf.org/config/sail#> .
+        @prefix owlim: <http://www.ontotext.com/trree/owlim#> .
+
+        [] a rep:Repository ;
+           rep:repositoryID "${GRAPHDB_TEST_REPOSITORY}" ;
+           rdfs:label "Test Repository" ;
+          rep:repositoryImpl [
+              rep:repositoryType "graphdb:SailRepository";
+              <http://www.openrdf.org/config/repository/sail#sailImpl> [
+                  <http://www.ontotext.com/config/graphdb#base-URL> "http://example.org/owlim#";
+                  <http://www.ontotext.com/config/graphdb#check-for-inconsistencies> "false";
+                  <http://www.ontotext.com/config/graphdb#defaultNS> "";
+                  <http://www.ontotext.com/config/graphdb#disable-sameAs> "true";
+                  <http://www.ontotext.com/config/graphdb#enable-context-index> "false";
+                  <http://www.ontotext.com/config/graphdb#enable-fts-index> "false";
+                  <http://www.ontotext.com/config/graphdb#enable-literal-index> "true";
+                  <http://www.ontotext.com/config/graphdb#enablePredicateList> "true";
+                  <http://www.ontotext.com/config/graphdb#entity-id-size> "32";
+                  <http://www.ontotext.com/config/graphdb#entity-index-size> "10000000";
+                  <http://www.ontotext.com/config/graphdb#fts-indexes> ("default" "iri");
+                  <http://www.ontotext.com/config/graphdb#fts-iris-index> "none";
+                  <http://www.ontotext.com/config/graphdb#fts-string-literals-index> "default";
+                  <http://www.ontotext.com/config/graphdb#imports> "";
+                  <http://www.ontotext.com/config/graphdb#in-memory-literal-properties> "true";
+                  <http://www.ontotext.com/config/graphdb#query-limit-results> "0";
+                  <http://www.ontotext.com/config/graphdb#query-timeout> "0";
+                  <http://www.ontotext.com/config/graphdb#read-only> "false";
+                  <http://www.ontotext.com/config/graphdb#repository-type> "file-repository";
+                  <http://www.ontotext.com/config/graphdb#ruleset> "rdfsplus-optimized";
+                  <http://www.ontotext.com/config/graphdb#storage-folder> "storage";
+                  <http://www.ontotext.com/config/graphdb#throw-QueryEvaluationException-on-timeout>
+                  "false";
+                  sail:sailType "graphdb:Sail"
+              ]
+          ].
+        EOF
+
+        curl -X POST \
+          -H "Content-Type: multipart/form-data" \
+          -u admin:root \
+          -F "config=@repo-config.ttl" \
+          http://localhost:7200/rest/repositories
+
+    - name: Run tests
+      run: poetry run pytest tests -v --tb=short
+
+
+      
