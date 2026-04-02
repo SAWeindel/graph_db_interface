@@ -3,6 +3,12 @@ import sys
 import pytest
 from graph_db_interface import GraphDB, GraphDBCredentials
 
+GLOBAL_NAMED_GRAPH = "http://example.org/global_named_graph"
+LOCAL_NAMED_GRAPH = "http://example.org/local_named_graph"
+SHACL_SHAPE_GRAPH = "http://rdf4j.org/schema/rdf4j#SHACLShapeGraph"
+
+TEST_GRAPHS = [None, GLOBAL_NAMED_GRAPH, LOCAL_NAMED_GRAPH, SHACL_SHAPE_GRAPH]
+
 
 @pytest.fixture(scope="session")
 def db() -> GraphDB:
@@ -26,11 +32,7 @@ def db() -> GraphDB:
 
     db = GraphDB(credentials=credentials)
 
-    for graph in [
-        None,
-        "http://example.org/named_graph",
-        "http://example.org/local_named_graph",
-    ]:
+    for graph in TEST_GRAPHS:
         db.clear_graph(graph)
 
     return db

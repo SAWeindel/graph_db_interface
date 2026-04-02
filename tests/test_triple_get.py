@@ -5,8 +5,7 @@ from graph_db_interface.utils.iri import IRI
 from rdflib import Literal, XSD
 import pytest
 
-GLOBAL_NAMED_GRAPH = "https://my_named_test_graph"
-LOCAL_NAMED_GRAPH = "http://example.org/local_named_graph"
+from .conftest import GLOBAL_NAMED_GRAPH, LOCAL_NAMED_GRAPH
 
 SUB_1 = "http://example.org#subject1"
 PRED_1 = "http://example.org#predicate1"

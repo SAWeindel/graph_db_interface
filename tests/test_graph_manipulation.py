@@ -6,8 +6,7 @@ from graph_db_interface.exceptions import InvalidInputError
 from graph_db_interface.utils import utils
 from graph_db_interface.utils.iri import IRI
 
-GLOBAL_NAMED_GRAPH = "http://example.org/named_graph"
-LOCAL_NAMED_GRAPH = "http://example.org/local_named_graph"
+from .conftest import GLOBAL_NAMED_GRAPH, LOCAL_NAMED_GRAPH
 
 SUB_1 = "http://example.org#subject_1"
 PRED_1 = "http://example.org#predicate_1"

@@ -1,5 +1,7 @@
 from graph_db_interface import GraphDB
 
+from .conftest import LOCAL_NAMED_GRAPH
+
 TEST_TTL_DATA = """@prefix ex: <http://example.org/> .
 @prefix foaf: <http://xmlns.com/foaf/0.1/> .
 
@@ -25,14 +27,12 @@ ex:Peter a foaf:Person ;
     foaf:name "Peter" .
 """
 
-GRAPH_IRI = "http://test_named_graph"
-
 
 def test_named_graph(db: GraphDB):
 
     # first fetch the test named graph to ensure it is empty
     graph = db.fetch_statements(
-        graph_iri=GRAPH_IRI,
+        graph_iri=LOCAL_NAMED_GRAPH,
     )
     assert graph is not None
     assert len(graph) == 0
@@ -41,14 +41,14 @@ def test_named_graph(db: GraphDB):
     success = db.import_statements(
         content=TEST_TTL_DATA,
         overwrite=False,
-        graph_iri=GRAPH_IRI,
+        graph_iri=LOCAL_NAMED_GRAPH,
         content_type="application/x-turtle",
     )
     assert success
 
     # fetch the named graph again to ensure data was added
     graph = db.fetch_statements(
-        graph_iri=GRAPH_IRI,
+        graph_iri=LOCAL_NAMED_GRAPH,
     )
     assert graph is not None
     assert len(graph) == 5
@@ -57,14 +57,14 @@ def test_named_graph(db: GraphDB):
     success = db.import_statements(
         content=UPDATED_TTL_DATA,
         overwrite=True,
-        graph_iri=GRAPH_IRI,
+        graph_iri=LOCAL_NAMED_GRAPH,
         content_type="application/x-turtle",
     )
     assert success
 
     # fetch the named graph again to ensure data was updated
     graph = db.fetch_statements(
-        graph_iri=GRAPH_IRI,
+        graph_iri=LOCAL_NAMED_GRAPH,
     )
     assert graph is not None
     assert len(graph) == 7
@@ -73,27 +73,27 @@ def test_named_graph(db: GraphDB):
     success = db.import_statements(
         content=TEST_TTL_DATA,
         overwrite=False,
-        graph_iri=GRAPH_IRI,
+        graph_iri=LOCAL_NAMED_GRAPH,
         content_type="application/x-turtle",
     )
     assert success
 
     # fetch the named graph again to ensure data was appended
     graph = db.fetch_statements(
-        graph_iri=GRAPH_IRI,
+        graph_iri=LOCAL_NAMED_GRAPH,
     )
     assert graph is not None
     assert len(graph) == 9
 
     # clear the named graph
     success = db.clear_graph(
-        graph_iri=GRAPH_IRI,
+        graph_iri=LOCAL_NAMED_GRAPH,
     )
     assert success
 
     # fetch the named graph again to ensure it is empty
     graph = db.fetch_statements(
-        graph_iri=GRAPH_IRI,
+        graph_iri=LOCAL_NAMED_GRAPH,
     )
     assert graph is not None
     assert len(graph) == 0
