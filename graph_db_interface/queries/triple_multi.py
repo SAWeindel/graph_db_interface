@@ -15,7 +15,11 @@ from graph_db_interface.utils.types import (
     TriplesLike,
     Triple,
 )
-from graph_db_interface.exceptions import InvalidInputError
+from graph_db_interface.exceptions import (
+    InvalidQueryError,
+    InvalidInputError,
+    GraphDbException,
+)
 
 from graph_db_interface.sparql_query import SPARQLQuery
 
@@ -218,7 +222,7 @@ def triples_add(
     triples_to_add: TriplesLike,
     check_exist: Optional[bool] = True,
     named_graph: Optional[GraphNameLike] = None,
-) -> bool:
+) -> None:
     """
     Add multiple triples to the graph database.
 
@@ -226,14 +230,11 @@ def triples_add(
         triples_to_add (TriplesLike): Triples to add.
         check_exist (Optional[bool]): If True, abort when any triple already exists. Defaults to True.
         named_graph (Optional[GraphNameLike]): Override the client's default named graph.
-
-    Returns:
-        bool: True if all triples were added, False otherwise.
     """
     named_graph = IRI(named_graph) if named_graph is not None else self.named_graph
 
     if not triples_to_add:
-        return True
+        return
 
     validated_triples_to_add = [
         utils.sanitize_triple(triple) for triple in triples_to_add
@@ -242,10 +243,9 @@ def triples_add(
     if check_exist and self.any_triple_exists(
         triples=validated_triples_to_add, named_graph=named_graph
     ):
-        self.logger.warning(
-            "At least one of the triples to add already exists in the graph."
-        )
-        return False
+        error_msg = "At least one of the triples to add already exists in the graph."
+        self.logger.warning(error_msg)
+        raise GraphDbException(error_msg)
 
     triple_strings = [
         utils.triple_to_string(triple, ".") for triple in validated_triples_to_add
@@ -255,17 +255,11 @@ def triples_add(
         triples=validated_triples_to_add,
         named_graph=named_graph,
     )
-    result = self.query(query=query, update=True)
-    if not result:
-        self.logger.warning(
-            f"Failed to add triples: ({triple_strings}), named_graph: {named_graph or "default"}, repository: {self._repository}"
-        )
-        return False
+    self.query(query=query, update=True)
 
     self.logger.debug(
         f"Successfully added triples: ({triple_strings}), named_graph: {named_graph or "default"}, repository: {self._repository}"
     )
-    return result
 
 
 def triples_delete(
@@ -273,7 +267,7 @@ def triples_delete(
     triples_to_delete: TriplesLike,
     check_exist: Optional[bool] = True,
     named_graph: Optional[GraphNameLike] = None,
-) -> bool:
+) -> None:
     """
     Delete multiple triples from the graph database.
 
@@ -281,14 +275,11 @@ def triples_delete(
         triples_to_delete (TriplesLike): Triples to delete.
         check_exist (Optional[bool]): If True, abort when any triple does not exist. Defaults to True.
         named_graph (Optional[GraphNameLike]): Override the client's default named graph.
-
-    Returns:
-        bool: True if all triples were deleted, False otherwise.
     """
     named_graph = IRI(named_graph) if named_graph is not None else self.named_graph
 
     if not triples_to_delete:
-        return True
+        return
 
     validated_triples_to_delete = [
         utils.sanitize_triple(triple) for triple in triples_to_delete
@@ -297,10 +288,9 @@ def triples_delete(
     if check_exist and not self.all_triple_exists(
         triples=validated_triples_to_delete, named_graph=named_graph
     ):
-        self.logger.warning(
-            "At least one of the triples to delete does not exist in the graph."
-        )
-        return False
+        error_msg = "At least one of the triples to delete does not exist in the graph."
+        self.logger.warning(error_msg)
+        raise GraphDbException(error_msg)
 
     triple_strings = [
         utils.triple_to_string(triple, ".") for triple in validated_triples_to_delete
@@ -310,17 +300,11 @@ def triples_delete(
         triples=validated_triples_to_delete,
         named_graph=named_graph,
     )
-    result = self.query(query=query, update=True)
-    if not result:
-        self.logger.warning(
-            f"Failed to delete triples: ({triple_strings}), named_graph: {named_graph or "default"}, repository: {self._repository}"
-        )
-        return False
+    self.query(query=query, update=True)
 
     self.logger.debug(
         f"Successfully deleted triples: ({triple_strings}), named_graph: {named_graph or "default"}, repository: {self._repository}"
     )
-    return True
 
 
 def triples_update(
@@ -329,7 +313,7 @@ def triples_update(
     new_triples: TriplesLike,
     check_exist: Optional[bool] = True,
     named_graph: Optional[GraphNameLike] = None,
-) -> bool:
+) -> None:
     """
     Update multiple RDF triples in the triplestore.
 
@@ -338,14 +322,11 @@ def triples_update(
         new_triples (TriplesLike): Replacement triples (same length as `old_triples`).
         check_exist (Optional[bool]): If True, abort when any old triple does not exist. Defaults to True.
         named_graph (Optional[GraphNameLike]): Override the client's default named graph.
-
-    Returns:
-        bool: True if the update was successful, False otherwise.
     """
     named_graph = IRI(named_graph) if named_graph is not None else self.named_graph
 
     if not old_triples and not new_triples:
-        return True
+        return
 
     if len(old_triples) != len(new_triples):
         raise InvalidInputError("Old and new triples lists must have the same length.")
@@ -356,10 +337,9 @@ def triples_update(
     if check_exist and not self.all_triple_exists(
         triples=validated_old_triples, named_graph=named_graph
     ):
-        self.logger.warning(
-            "At least one of the triples to update does not exist in the graph."
-        )
-        return False
+        error_msg = "At least one of the triples to update does not exist in the graph."
+        self.logger.warning(error_msg)
+        raise GraphDbException(error_msg)
 
     def _render_term(
         term: Any,
@@ -429,14 +409,8 @@ WHERE {{
 {where_block}
 }}
 """.strip()
-    result = self.query(query=query, update=True)
-    if not result:
-        self.logger.warning(
-            f"Failed to update triples ({validated_old_triples}) -> ({validated_new_triples}), named_graph: {named_graph or "default"}, repository: {self._repository}"
-        )
-        return False
+    self.query(query=query, update=True)
 
     self.logger.debug(
         f"Successfully updated triples ({validated_old_triples}) -> ({validated_new_triples}), named_graph: {named_graph or "default"}, repository: {self._repository}"
     )
-    return True

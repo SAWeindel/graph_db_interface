@@ -11,7 +11,7 @@ from graph_db_interface.utils.types import (
     GraphNameLike,
     TripleLike,
 )
-from graph_db_interface.exceptions import InvalidInputError
+from graph_db_interface.exceptions import InvalidInputError, GraphDbException
 
 from graph_db_interface.sparql_query import SPARQLQuery
 
@@ -60,16 +60,13 @@ def triple_add(
     self: "GraphDB",
     triple: TripleLike,
     named_graph: Optional[GraphNameLike] = None,
-) -> bool:
+) -> None:
     """
     Add a triple to the graph database.
 
     Args:
         triple (TripleLike): The triple `(subject, predicate, object)` to insert.
         named_graph (Optional[GraphNameLike]): Override the client's default named graph.
-
-    Returns:
-        bool: True if the triple was inserted, False otherwise.
     """
     triple = utils.sanitize_triple(triple)
     named_graph = IRI(named_graph) if named_graph is not None else self.named_graph
@@ -78,18 +75,11 @@ def triple_add(
         triples=[triple],
         named_graph=named_graph,
     )
-    result = self.query(query=query, update=True)
-    if not result:
-        self.logger.warning(
-            f"Failed to insert triple: ({utils.triple_to_string(triple)}) named_graph: {named_graph or "default"}, repository: {self._repository}"
-        )
-        return False
+    self.query(query=query, update=True)
 
     self.logger.debug(
         f"Successfully inserted triple: ({utils.triple_to_string(triple)}) named_graph: {named_graph or "default"}, repository: {self._repository}"
     )
-
-    return True
 
 
 def triple_delete(
@@ -97,45 +87,37 @@ def triple_delete(
     triple: TripleLike,
     check_exist: Optional[bool] = True,
     named_graph: Optional[GraphNameLike] = None,
-) -> bool:
+) -> None:
     """
     Delete a single triple.
 
     A SPARQL DELETE operation in GraphDB can be successful even if the triple
     does not exist. When `check_exist=True`, the function verifies the triple is
-    present before attempting deletion.
+    present before attempting deletion and raises an error if not found.
 
     Args:
         triple (TripleLike): The triple `(subject, predicate, object)` to delete.
         check_exist (Optional[bool]): Whether to verify existence prior to deletion. Defaults to True.
         named_graph (Optional[GraphNameLike]): Override the client's default named graph.
-
-    Returns:
-        bool: True if deletion succeeded (or triple absent when `check_exist=False`), False otherwise.
     """
     triple = utils.sanitize_triple(triple)
     named_graph = IRI(named_graph) if named_graph is not None else self.named_graph
 
     if check_exist:
         if not self.triple_exists(triple, named_graph=named_graph):
-            self.logger.warning("Unable to delete triple since it does not exist")
-            return False
+            error_msg = "Unable to delete triple since it does not exist"
+            self.logger.warning(error_msg)
+            raise GraphDbException(error_msg)
 
     query = SPARQLQuery.delete_data(
         triples=[triple],
         named_graph=named_graph,
     )
-    result = self.query(query=query, update=True)
-    if not result:
-        self.logger.warning(
-            f"Failed to delete triple: ({utils.triple_to_string(triple)}), named_graph: {named_graph or "default"}, repository: {self._repository}"
-        )
-        return False
+    self.query(query=query, update=True)
 
     self.logger.debug(
         f"Successfully deleted triple: ({utils.triple_to_string(triple)}), named_graph: {named_graph or "default"}, repository: {self._repository}"
     )
-    return True
 
 
 def triple_update(
@@ -163,13 +145,6 @@ def triple_update(
         new_obj (Optional[ObjectLike]): Replacement object.
         check_exist (Optional[bool]): If True, verify that `old_triple` exists before updating. Defaults to True.
         named_graph (Optional[GraphNameLike]): Override the client's default named graph.
-
-    Returns:
-        bool: True if the update succeeded, False otherwise.
-
-    Raises:
-        InvalidInputError: If neither or both of `new_triple` and any of `new_sub`/`new_pred`/`new_obj` are provided,
-            or if input triples are incomplete/invalid.
     """
     elems_given = new_sub is not None or new_pred is not None or new_obj is not None
     if (new_triple and elems_given) or (not new_triple and not elems_given):
@@ -187,10 +162,9 @@ def triple_update(
 
     if check_exist:
         if not self.triple_exists(old_triple, named_graph=named_graph):
-            self.logger.warning(
-                f"Triple does not exist: ({utils.triple_to_string(old_triple)})"
-            )
-            return False
+            error_msg = f"Triple does not exist: ({utils.triple_to_string(old_triple)})"
+            self.logger.warning(error_msg)
+            raise GraphDbException(error_msg)
 
     # Determine replacement variables
     update_triple = tuple(n if n else o for o, n in zip(old_triple, new_triple))
@@ -201,14 +175,8 @@ def triple_update(
         where_clauses=[utils.triple_to_string(old_triple, ".")],
         named_graph=named_graph,
     )
-    result = self.query(query=query, update=True)
-    if not result:
-        self.logger.warning(
-            f"Failed to update triple to: ({utils.triple_to_string(update_triple)}), named_graph: {named_graph or "default"}, repository: {self._repository}"
-        )
-        return False
+    self.query(query=query, update=True)
 
     self.logger.debug(
         f"Successfully updated triple to: ({utils.triple_to_string(update_triple)}), named_graph: {named_graph or "default"}, repository: {self._repository}"
     )
-    return True

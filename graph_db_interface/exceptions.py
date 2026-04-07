@@ -103,3 +103,19 @@ class GraphDbException(GraphDBInterfaceError):
     ):
         self.message = message
         super().__init__(self.message)
+
+
+class SHACLValidationError(GraphDBInterfaceError):
+    """
+    Error raised when a SHACL validation constraint is violated.
+
+    Args:
+        message (str): Details about the SHACL validation failure.
+    """
+
+    def __init__(
+        self,
+        message: str,
+    ):
+        self.message = message
+        super().__init__(self.message)

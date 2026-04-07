@@ -14,6 +14,8 @@ from graph_db_interface.exceptions import (
     InvalidRepositoryError,
     AuthenticationError,
     GraphDbException,
+    InvalidQueryError,
+    SHACLValidationError,
 )
 from graph_db_interface.utils.utils import convert_multi_bindings_to_python_type
 
@@ -289,7 +291,7 @@ class GraphDB:
         query: Union[SPARQLQuery, str],
         update: Optional[bool] = False,
         convert_bindings: Optional[bool] = False,
-    ) -> Optional[Union[Dict, bool]]:
+    ) -> Optional[Dict]:
         """
         Execute a SPARQL query or update against the repository.
 
@@ -327,20 +329,14 @@ class GraphDB:
         response = self._make_request("post", endpoint, headers=headers, data=query)
 
         if not response.ok:
-            status_code = response.status_code
-            self.logger.error(
-                f"Error while querying GraphDB ({status_code}) - {response.text}"
-            )
-            raise GraphDbException(
-                f"Error while querying GraphDB ({status_code}) - {response.text}"
-            )
+            raise self._raise_query_exception(response, update)
 
         self.logger.debug(
             f'Query\n"""\n{query}\n"""\nReturned\n{"Update successful (200)" if update else response.json()}'
         )
 
         if update:
-            return True
+            return None
 
         response = response.json()
 
@@ -354,3 +350,55 @@ class GraphDB:
             response["results"]["bindings"] = converted_bindings
 
         return response
+
+    def _raise_query_exception(
+        self,
+        response: Response,
+        update: bool,
+    ) -> Exception:
+        """
+        Handle exceptions raised during query execution.
+
+        This method can be used to centralize error handling logic for queries, such as
+        logging, retries, or returning default values.
+
+        Args:
+            response (Response): The response object from the HTTP request.
+            update (bool): Whether the query was an update operation.
+
+        Returns:
+            Exception: The exception to be raised or handled by the caller.
+        """
+        error_type = None
+        message = None
+
+        status_code = response.status_code
+        match status_code:
+            case 400:
+                if response.text.startswith("MALFORMED QUERY"):
+                    error_type = InvalidQueryError
+                    message = f"Malformed SPARQL {'update' if update else 'query'}: {response.text}"
+                # fallback to generic error handling for other 400 errors
+            case 401 | 403:
+                error_type = AuthenticationError
+                message = f"Authentication error during SPARQL {'update' if update else 'query'}: {response.text}"
+            case 500:
+                if (
+                    response.text.startswith("_:")
+                    and '<http://www.w3.org/ns/shacl#conforms> "false"^^<http://www.w3.org/2001/XMLSchema#boolean> .'
+                    in response.text
+                ):
+                    error_type = SHACLValidationError
+                    message = f"{response.text}"
+                # fallback to generic error handling for other 500 errors
+            case _:
+                pass  # fallback to generic error handling
+
+        # Generic error for any other status code
+        error_type = error_type or GraphDbException
+        message = (
+            message or f"Error while querying GraphDB ({status_code}) - {response.text}"
+        )
+
+        self.logger.error(message)
+        return error_type(message)
