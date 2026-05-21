@@ -28,7 +28,7 @@ class IRI(URIRef):
         If desired, convert to string explicitly before passing.
     - Separate base and name: `base="http://example.org", value="Name"`.
     - Angle brackets `<...>`.
-    - Trailing `#`, `\` or `:` from value and base.
+    - Trailing `#`, `\\` or `:` from value and base.
     """
 
     PREFIXES = {

@@ -328,14 +328,15 @@ def triples_update(
     if not old_triples and not new_triples:
         return
 
-    if len(old_triples) != len(new_triples):
-        raise InvalidInputError("Old and new triples lists must have the same length.")
-
     validated_old_triples = [utils.sanitize_triple(triple) for triple in old_triples]
     validated_new_triples = [utils.sanitize_triple(triple) for triple in new_triples]
 
-    if check_exist and not self.all_triple_exists(
-        triples=validated_old_triples, named_graph=named_graph
+    if (
+        check_exist
+        and validated_old_triples
+        and not self.all_triple_exists(
+            triples=validated_old_triples, named_graph=named_graph
+        )
     ):
         error_msg = "At least one of the triples to update does not exist in the graph."
         self.logger.warning(error_msg)
