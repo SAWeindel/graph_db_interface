@@ -304,7 +304,24 @@ class IRI(URIRef):
 
         # Full IRI
         if any(raw.startswith(scheme) for scheme in IRI.SCHEMES):
-            if raw.count(":") > 1:
+            # Reject a ':' used where a '#' was intended (e.g. ".../owl:Class"),
+            # but allow a legitimate authority port (e.g. "http://host:8991/path").
+            # The scheme's own ':' (in "://") is stripped first; then a trailing
+            # ':<digits>' port in the authority is removed before counting any
+            # remaining stray colons.
+            matched_scheme = next(s for s in IRI.SCHEMES if raw.startswith(s))
+            after_scheme = raw[len(matched_scheme):]
+            sep_index = len(after_scheme)
+            for sep in ("/", "#", "?"):
+                i = after_scheme.find(sep)
+                if i != -1:
+                    sep_index = min(sep_index, i)
+            authority = after_scheme[:sep_index]
+            remainder = after_scheme[sep_index:]
+            host_part, sep, port_part = authority.rpartition(":")
+            if sep and port_part.isdigit():
+                authority = host_part
+            if authority.count(":") + remainder.count(":") > 0:
                 raise InvalidIRIError(
                     f"Invalid IRI: ':' outside of supported schemes {IRI.SCHEMES} ({value}, {base})"
                 )
