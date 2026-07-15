@@ -333,9 +333,17 @@ def triples_update(
     """
     Update multiple RDF triples in the triplestore.
 
+    The removal of `old_triples` and the insertion of `new_triples` are applied in a
+    single atomic `DELETE ... INSERT ... WHERE` SPARQL transaction. The two lists need
+    not be the same length: this supports pure additions, pure removals, and general
+    replacements. Atomicity matters for constraint (e.g. SHACL) correctness — replacing
+    a cardinality-constrained property (such as a possession handover under a
+    "possessed by exactly one resource" shape) must never expose the intermediate state
+    in which the property is momentarily absent.
+
     Args:
-        old_triples (TriplesLike): Triples to be replaced.
-        new_triples (TriplesLike): Replacement triples (same length as `old_triples`).
+        old_triples (TriplesLike): Triples to remove.
+        new_triples (TriplesLike): Triples to insert. Need not match the length of `old_triples`.
         check_exist (Optional[bool]): If True, abort when any old triple does not exist. Defaults to True.
         named_graph (Optional[GraphNameLike]): Override the client's default named graph.
 
@@ -347,14 +355,15 @@ def triples_update(
     if not old_triples and not new_triples:
         return True
 
-    if len(old_triples) != len(new_triples):
-        raise InvalidInputError("Old and new triples lists must have the same length.")
-
     validated_old_triples = [utils.sanitize_triple(triple) for triple in old_triples]
     validated_new_triples = [utils.sanitize_triple(triple) for triple in new_triples]
 
-    if check_exist and not self.all_triple_exists(
-        triples=validated_old_triples, named_graph=named_graph
+    if (
+        check_exist
+        and validated_old_triples
+        and not self.all_triple_exists(
+            triples=validated_old_triples, named_graph=named_graph
+        )
     ):
         self.logger.warning(
             "At least one of the triples to update does not exist in the graph."

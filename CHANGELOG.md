@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+### Changed
+
+- **`triples_update` now performs a general atomic update, not only equal-length
+  replacement** (`graph_db_interface/queries/triple_multi.py`).
+
+  Previously `triples_update` raised `InvalidInputError` unless `old_triples` and
+  `new_triples` had the same length, restricting it to 1:1 value replacement. The
+  method already builds a single `DELETE ... INSERT ... WHERE` SPARQL transaction,
+  which handles pure additions, pure removals, and unequal-size replacements
+  equally well, so the length restriction was removed. The existence pre-check is
+  now skipped when `old_triples` is empty (a pure insert has nothing to check).
+
+  This atomicity is required for constraint (SHACL) correctness: replacing a
+  cardinality-constrained property — e.g. a possession handover under a "possessed
+  by exactly one resource" shape — must apply the removal and the insertion in one
+  transaction so the intermediate (property-absent) state is never validated.
+
+  Enables `kapps_ogm.OGM.commit` to add/remove/replace properties through a single
+  atomic transaction. Requested by the `kapps_semantic_middleware` project.
+
 ### Fixed
 
 - **`IRI` rejected any URL containing a port** (`graph_db_interface/utils/iri.py`,
