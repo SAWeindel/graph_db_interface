@@ -24,6 +24,42 @@
 
 ### Fixed
 
+- **`triples_update` replaced a retained blank node instead of updating it**
+  (`graph_db_interface/queries/triple_multi.py`).
+
+  **Symptom:** updating one property of an existing blank node was impossible. The node
+  was unlinked and a *different* node took its place, so every triple attached to the
+  original that the caller had not listed in `old_triples` became unreachable — silently,
+  with the call reporting success.
+
+  **Cause:** the DELETE and INSERT patterns were rendered from two separate blank-node →
+  variable maps (`old_bn_var_map` / `new_bn_var_map`). A `BNode` passed on both sides —
+  the caller's way of saying "same node, different property value" — therefore became
+  `?oldbn1` in the DELETE and `?newbn1` in the INSERT, and every new-side variable was
+  bound by `BIND(BNODE() AS ?newbnN)`, which mints a fresh store node. Captured query
+  before the fix, for a node whose only change is its value:
+
+  ```sparql
+  DELETE { <Belt1> :hasValue ?oldbn1 . ?oldbn1 :hasValue 12.1 }
+  INSERT { <Belt1> :hasValue ?newbn1 . ?newbn1 :hasValue 1.4 }
+  WHERE  { <Belt1> :hasValue ?oldbn1 . ?oldbn1 :hasValue 12.1 . BIND(BNODE() AS ?newbn1) }
+  ```
+
+  **Fix:** one shared map across both pattern sets, so a blank node present on both sides
+  renders as a single variable already bound by the WHERE clause. `BIND(BNODE() AS ?v)` is
+  now emitted only for blank nodes exclusive to `new_triples`. Behaviour for pure
+  additions, pure removals, unequal-length replacements and the IRI-only path is unchanged,
+  as is the single-transaction atomicity the SHACL note above depends on.
+
+  **Tests:** `tests/test_triple_update_query.py` asserts on the generated SPARQL and needs
+  no live repository, unlike the existing update tests. Verified red before the change and
+  green after: the two blank-node-identity tests fail on the previous implementation, the
+  two control tests pass on both.
+
+  Found while designing anonymous-node identity in `kapps_ogm` (see
+  `JaFeKl/graph_db_interface#6`); a correctness fix for this library independently of that
+  work. Reported by the `kapps_semantic_middleware` project.
+
 - **`IRI` rejected any URL containing a port** (`graph_db_interface/utils/iri.py`,
   `IRI._sanitize`).
 

@@ -400,13 +400,23 @@ def triples_update(
             patterns.append(f"{subj_str} {pred_str} {obj_str} .")
         return patterns
 
-    old_bn_var_map: Dict[BNode, str] = {}
-    new_bn_var_map: Dict[BNode, str] = {}
+    # One map across both sides: a BNode occurring in old_triples and in new_triples is
+    # the *same* node, so it must render as the same SPARQL variable. Two maps gave it
+    # two variables, and the new-side one was then bound by BIND(BNODE()) below — which
+    # minted a replacement node and orphaned every triple the caller had not listed in
+    # old_triples. That made it impossible to update one property of an existing blank
+    # node while keeping the node.
+    bn_var_map: Dict[BNode, str] = {}
 
-    old_delete_patterns = _build_patterns(
-        validated_old_triples, old_bn_var_map, "oldbn"
-    )
-    insert_patterns = _build_patterns(validated_new_triples, new_bn_var_map, "newbn")
+    old_delete_patterns = _build_patterns(validated_old_triples, bn_var_map, "bn")
+    bn_bound_by_where = set(bn_var_map)
+    insert_patterns = _build_patterns(validated_new_triples, bn_var_map, "bn")
+
+    # Only blank nodes exclusive to the new side need minting; the rest are already
+    # bound by the WHERE clause.
+    new_only_bn_vars = [
+        var for bnode, var in bn_var_map.items() if bnode not in bn_bound_by_where
+    ]
 
     def _format_block(patterns: List[str]) -> str:
         if not patterns:
@@ -420,9 +430,9 @@ def triples_update(
     where_block_parts: List[str] = []
     if where_patterns:
         where_block_parts.append(_format_block(where_patterns))
-    if new_bn_var_map:
+    if new_only_bn_vars:
         where_block_parts.extend(
-            f"  BIND(BNODE() AS {var})" for var in new_bn_var_map.values()
+            f"  BIND(BNODE() AS {var})" for var in new_only_bn_vars
         )
     where_block = "\n".join(where_block_parts)
 
