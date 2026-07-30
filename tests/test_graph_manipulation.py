@@ -301,6 +301,48 @@ def test_update_multiple_triples(db: GraphDB, named_graph: str):
     assert result is True
 
 
+ASYM_SUB = "http://example.org#asymmetric_subject"
+ASYM_PRED = "http://example.org#asymmetric_predicate"
+
+
+def test_update_adds_more_triples_than_it_removes(db: GraphDB, named_graph: str):
+    """An update is not restricted to 1:1 replacement.
+
+    `kapps_ogm.OGM.commit` feeds the output of a diff straight to `triples_update`, and a
+    diff is a set difference — the removed and added lists are almost never the same
+    length. An equal-length constraint here therefore breaks every such commit, so this
+    pins the widened contract rather than leaving it to a downstream consumer to discover.
+    """
+    old = [(ASYM_SUB, ASYM_PRED, 1)]
+    new = [(ASYM_SUB, ASYM_PRED, 2), (ASYM_SUB, ASYM_PRED, 3), (ASYM_SUB, ASYM_PRED, 4)]
+
+    assert db.triples_add(old, named_graph=named_graph) is True
+
+    assert db.triples_update(old_triples=old, new_triples=new, named_graph=named_graph) is True
+
+    assert db.triple_exists(old[0], named_graph=named_graph) is False
+    for triple in new:
+        assert db.triple_exists(triple, named_graph=named_graph) is True
+
+    assert db.triples_delete(new, named_graph=named_graph) is True
+
+
+def test_update_removes_more_triples_than_it_adds(db: GraphDB, named_graph: str):
+    """The reverse direction of the same widening — a diff that drops more than it adds."""
+    old = [(ASYM_SUB, ASYM_PRED, 5), (ASYM_SUB, ASYM_PRED, 6), (ASYM_SUB, ASYM_PRED, 7)]
+    new = [(ASYM_SUB, ASYM_PRED, 8)]
+
+    assert db.triples_add(old, named_graph=named_graph) is True
+
+    assert db.triples_update(old_triples=old, new_triples=new, named_graph=named_graph) is True
+
+    for triple in old:
+        assert db.triple_exists(triple, named_graph=named_graph) is False
+    assert db.triple_exists(new[0], named_graph=named_graph) is True
+
+    assert db.triples_delete(new, named_graph=named_graph) is True
+
+
 def test_iri_exists(db: GraphDB, named_graph: str):
     # add a new triple to the default graph
     result = db.triple_add(
