@@ -24,6 +24,39 @@
 
 ### Fixed
 
+- **Every request opened a new TCP connection and re-ran the TLS handshake**
+  (`graph_db_interface/graph_db.py`).
+
+  **Symptom:** every call through the client — query, update, graph import, repository
+  listing — cost far more than the work it asked the server to do. Against a remote HTTPS
+  endpoint (`https://graphdb.iam-mms.kit.edu`) a trivial `ASK { ?s ?p ?o }` measured
+  ~17 ms, of which only ~4 ms was the request itself. The cost was invisible per call and
+  compounded with volume: a single `kapps_semantic_middleware` integration test issues 129
+  requests, so it paid ~1.7 s in handshakes alone.
+
+  **Cause:** `_make_request` dispatched through the module-level `requests` helpers,
+  `getattr(requests, method)(...)`. Those are documented convenience wrappers that
+  construct a `requests.Session`, use it for exactly one request, and close it. Closing the
+  session discards its `urllib3` connection pool, so no connection was ever reused and each
+  call paid a fresh TCP connect plus a full TLS handshake. Confirmed by counting
+  `urllib3` connection creations: three sequential queries opened three
+  `HTTPSConnectionPool` connections.
+
+  **Fix:** the client now holds a persistent `requests.Session` **per thread** and issues
+  every request through it, so the connection pool survives across calls. Per thread rather
+  than one shared session because a `requests.Session` mutates its cookie jar on every
+  response and is not thread-safe — and one client is commonly driven from several threads
+  at once, e.g. a web framework serving requests while the embedding code queries. urllib3's
+  connection pools are thread-safe; the session wrapping them is not. Each thread pays one
+  handshake and then reuses its own pool. Added `GraphDB.close()`, which releases the pools
+  held for every thread that used the client. No change to any method signature or response
+  handling.
+
+  **Measured effect:** per-request cost against the remote endpoint dropped from ~17 ms to
+  ~4 ms. The `kapps_semantic_middleware` suite (146 tests, live GraphDB) went from 158 s to
+  60 s — a 2.65× speed-up with no test changes. Regression test:
+  `tests/test_connection_reuse.py`.
+
 - **`triples_update` replaced a retained blank node instead of updating it**
   (`graph_db_interface/queries/triple_multi.py`).
 

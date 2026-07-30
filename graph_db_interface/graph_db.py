@@ -5,6 +5,7 @@ from typing import List, Union, Optional, Dict
 from graph_db_interface.kafka.kafka_manager import KafkaManager
 import requests
 import logging
+import threading
 from requests import Response
 from graph_db_interface.utils.graph_db_credentials import GraphDBCredentials
 from graph_db_interface.utils.iri import IRI
@@ -43,6 +44,21 @@ class GraphDB:
         self._timeout = timeout
         self._auth = None
         self._blank_ids = set()
+
+        # A persistent session per thread, so the connection pool survives across calls.
+        # The module-level `requests.get`/`requests.post` helpers build a throwaway session
+        # per call, which means a new TCP connect and a full TLS handshake for every SPARQL
+        # query — against a remote HTTPS endpoint that dominates the cost of a query, and a
+        # client typically issues many.
+        #
+        # Per thread rather than one shared session, because a `requests.Session` is not
+        # thread-safe: its cookie jar is mutated by every response. One client is commonly
+        # driven from several threads at once — a web framework serving requests while the
+        # embedding code queries — and urllib3's pools are thread-safe but the session
+        # around them is not. Each thread pays one handshake and then reuses its own pool.
+        self._thread_local = threading.local()
+        self._sessions: list[requests.Session] = []
+        self._sessions_lock = threading.Lock()
 
         if use_gdb_token:
             self._auth = self._get_authentication_token(
@@ -243,12 +259,31 @@ class GraphDB:
         if self._auth is not None:
             headers["Authorization"] = self._auth
 
-        return getattr(requests, method)(
+        return self._session.request(
+            method,
             f"{self._credentials.base_url}/{endpoint}",
             headers=headers,
             timeout=timeout,
             **kwargs,
         )
+
+    @property
+    def _session(self) -> requests.Session:
+        """This thread's persistent session, created on first use."""
+        session = getattr(self._thread_local, "session", None)
+        if session is None:
+            session = requests.Session()
+            self._thread_local.session = session
+            with self._sessions_lock:
+                self._sessions.append(session)
+        return session
+
+    def close(self) -> None:
+        """Release the HTTP connection pools held for every thread that used this client."""
+        with self._sessions_lock:
+            sessions, self._sessions = self._sessions, []
+        for session in sessions:
+            session.close()
 
     def _get_authentication_token(
         self,
